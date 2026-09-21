@@ -1,0 +1,39 @@
+name: drop-zip
+# Delta-overlay updater. Put a project .zip in the repo ROOT and commit it; this
+# expands it OVER the tree (ADD + REPLACE, never deletes), commits the result,
+# and consumes the zip. It intentionally does NOT touch .github/workflows (the
+# GITHUB_TOKEN can't), which is why the project zip ships its build workflow as
+# `github/workflows/` (no dot) — expand it, then rename that folder to
+# `.github/workflows/` yourself and push; that push fires the build.
+on:
+  push:
+    paths: ["*.zip"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  expand:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Expand dropped zip (add + replace, no delete)
+        run: |
+          set -e
+          zip=$(ls -t *.zip 2>/dev/null | head -1 || true)
+          if [ -z "$zip" ]; then echo "No root .zip; nothing to do."; exit 0; fi
+          echo "Expanding $zip"
+          tmp=$(mktemp -d); unzip -oq "$zip" -d "$tmp"
+          entries=$(ls -A "$tmp")
+          if [ "$(echo "$entries" | wc -l)" -eq 1 ] && [ -d "$tmp/$entries" ]; then
+            src="$tmp/$entries"; else src="$tmp"; fi
+          cp -a "$src"/. ./ 2>/dev/null || (cd "$src" && tar cf - --exclude=.git . | (cd "$GITHUB_WORKSPACE" && tar xf -))
+          rm -rf "$tmp"; rm -f "$zip"
+      - name: Commit
+        run: |
+          git config user.name  "fox-drop-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then echo "No changes."; else
+            git commit -m "drop-zip: overlay update (add/replace); consumed zip"
+            git push
+          fi
