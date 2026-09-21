@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>M5 HW ID</title>
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem;
+           background: #0a0a12; color: #c8facc; }
+    h1 { color: #5cff8d; }
+    code { background: #1a1a2e; padding: 0.15rem 0.4rem; border-radius: 4px; }
+    .box { border: 1px solid #5cff8d; border-radius: 12px; padding: 1.25rem; margin: 1rem 0; }
+    a { color: #8cffb0; }
+  </style>
+</head>
+<body>
+  <h1>M5 HW ID</h1>
+  <p>Flash this on any M5 board (ESP32 or ESP32-S3). It auto-detects silicon, M5 board id,
+     display size, and I2C devices — then prints a factual report on the screen and USB serial.</p>
+  <div class="box">
+    <esp-web-install-button manifest="./firmware/manifest.json">
+      <button slot="activate">Flash M5 HW ID</button>
+    </esp-web-install-button>
+    <p style="font-size:0.85em;margin-top:1rem">
+      Manifest must be valid JSON:
+      <a href="./firmware/manifest.json">./firmware/manifest.json</a>
+    </p>
+  </div>
+  <div class="box">
+    <strong>What you get</strong>
+    <ul>
+      <li>Chip model, revision, flash, PSRAM, MAC</li>
+      <li>M5Unified board id + name (AtomS3R, Core2, …)</li>
+      <li>Display resolution</li>
+      <li>I2C map (LP5562, BMI270, ES8311, AXP, …)</li>
+      <li>Suggested firmware target hint</li>
+    </ul>
+    <p>Open serial at 115200 after flash. Press the button to reprint the report.</p>
+  </div>
+</body>
+</html>

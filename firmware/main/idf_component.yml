@@ -1,0 +1,5 @@
+dependencies:
+  idf: ">=5.1"
+  m5stack/m5gfx: "^0.2.27"
+  m5stack/m5unified: "^0.2.17"
+  espressif/arduino-esp32: "^3.0.0"

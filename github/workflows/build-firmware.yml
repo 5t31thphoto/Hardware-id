@@ -1,0 +1,151 @@
+name: build-firmware
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-s3:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Locate sources
+        run: |
+          set -e
+          if [ ! -f firmware/CMakeLists.txt ]; then
+            found=$(find . -name CMakeLists.txt -path '*/firmware/CMakeLists.txt' | head -1 || true)
+            if [ -n "$found" ]; then
+              root=$(dirname "$(dirname "$found")")
+              cp -a "$root"/. ./
+            fi
+          fi
+          test -f firmware/CMakeLists.txt
+          # target defaults
+          cp firmware/sdkconfig.defaults.esp32s3 firmware/sdkconfig.defaults.s3merge
+          cat firmware/sdkconfig.defaults >> firmware/sdkconfig.defaults.s3merge
+          cp firmware/sdkconfig.defaults.s3merge firmware/sdkconfig.defaults
+      - uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.2
+          target: esp32s3
+          path: firmware
+      - name: Collect S3 artifacts
+        run: |
+          set -e
+          mkdir -p dist
+          cp firmware/build/bootloader/bootloader.bin dist/s3_bootloader.bin
+          cp firmware/build/partition_table/partition-table.bin dist/s3_partition-table.bin
+          APP=$(ls firmware/build/*.bin | grep -v bootloader | grep -v partition | head -1)
+          cp "$APP" dist/s3_app.bin
+          ls -la dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hwid-s3
+          path: dist/s3_*.bin
+
+  build-esp32:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Locate + target ESP32
+        run: |
+          set -e
+          if [ ! -f firmware/CMakeLists.txt ]; then
+            found=$(find . -name CMakeLists.txt -path '*/firmware/CMakeLists.txt' | head -1 || true)
+            if [ -n "$found" ]; then
+              root=$(dirname "$(dirname "$found")")
+              cp -a "$root"/. ./
+            fi
+          fi
+          test -f firmware/CMakeLists.txt
+          cp firmware/sdkconfig.defaults.esp32 firmware/sdkconfig.defaults.espmerge
+          cat firmware/sdkconfig.defaults >> firmware/sdkconfig.defaults.espmerge
+          # strip S3-only if any
+          grep -v SPIRAM firmware/sdkconfig.defaults.espmerge > firmware/sdkconfig.defaults || true
+          cp firmware/sdkconfig.defaults.esp32 firmware/sdkconfig.defaults
+          cat >> firmware/sdkconfig.defaults << 'E'
+          CONFIG_PARTITION_TABLE_CUSTOM=y
+          CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+          CONFIG_AUTOSTART_ARDUINO=n
+          CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+          CONFIG_COMPILER_DISABLE_GCC12_WARNINGS=y
+          CONFIG_COMPILER_DISABLE_GCC13_WARNINGS=y
+          CONFIG_MBEDTLS_PSK_MODES=y
+          CONFIG_MBEDTLS_KEY_EXCHANGE_PSK=y
+          E
+      - uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.2
+          target: esp32
+          path: firmware
+      - name: Collect ESP32 artifacts
+        run: |
+          set -e
+          mkdir -p dist
+          cp firmware/build/bootloader/bootloader.bin dist/esp32_bootloader.bin
+          cp firmware/build/partition_table/partition-table.bin dist/esp32_partition-table.bin
+          APP=$(ls firmware/build/*.bin | grep -v bootloader | grep -v partition | head -1)
+          cp "$APP" dist/esp32_app.bin
+          ls -la dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hwid-esp32
+          path: dist/esp32_*.bin
+
+  package:
+    needs: [build-s3, build-esp32]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: hwid-s3
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: hwid-esp32
+          path: dist
+      - name: Manifest + Pages
+        run: |
+          set -e
+          ls -la dist/
+          python3 tools/write_manifest.py
+          test -f dist/manifest.json
+          python3 -c "import json; json.load(open('dist/manifest.json'))"
+          rm -rf site
+          mkdir -p site/firmware
+          cp web/index.html site/index.html
+          cp dist/* site/firmware/
+          touch site/.nojekyll
+          find site -type f | sort
+          cat site/firmware/manifest.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: m5hwid-firmware
+          path: dist/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy-pages:
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
